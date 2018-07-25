@@ -246,6 +246,7 @@ class Nuphase():
             print 'last trig type        master:', self.last_trig_type[0], 'slave:', self.last_trig_type[1]
 
     def getMetaData(self, verbose=True):
+        '''UPDATE FOR BEACON'''
         metadata={}
         metadata['master'] = {}  #master
         metadata['slave'] = {}  #slave
