@@ -1,5 +1,7 @@
 # ADC board Interface to BeagleBone Black (industrial version)
-# SPI1, CS0 for master board. SPI0 CS0 for slave board
+# SPI0, CS0 for master board. SPI1 CS0 for slave board
+#
+# for protoBEACON, there is no slave board
 
 from Adafruit_BBIO import SPI
 import Adafruit_BBIO.GPIO as GPIO
@@ -26,17 +28,20 @@ class Nuphase():
         'CALPULSE'      : 0x2A, #toggle RF switch/pulser board
         }
         
-    def __init__(self, spi_clk_freq=10000000):
+    def __init__(self, spi_clk_freq=10000000, dualBoard=False):
         if not os.path.isfile('/sys/class/gpio/gpio60/value'):
             GPIO.setup("P9_12", GPIO.OUT) #enable pin for 2.5V bus drivers
             GPIO.output("P9_12", GPIO.LOW)  #enable for 2.5V bus drivers
-        self.BUS_MASTER = 1
-        self.BUS_SLAVE = 0
+        self.BUS_MASTER = 0
+        self.BUS_SLAVE = 1
         self.spi={}
-        self.spi[0]=SPI.SPI(self.BUS_SLAVE,0) #setup SPI0
+        self.spi[0]=SPI.SPI(self.BUS_MASTER,0) #setup SPI0
         self.spi[0].mode = 0
-        self.spi[1]=SPI.SPI(self.BUS_MASTER,0)
+        self.spi[1]=SPI.SPI(self.BUS_SLAVE,0)
         self.spi[1].mode = 0
+
+        self.dualBoard = dualBoard
+        
         try:
             self.spi[0].msh = spi_clk_freq
             self.spi[1].msh = spi_clk_freq
@@ -92,11 +97,14 @@ class Nuphase():
                 board_dna_slave = board_dna_slave | (dna_hi_slave[i-6] << i*8)
                 board_dna_master = board_dna_master | (dna_hi_master[i-6] << i*8)
 
-        return board_dna_slave, board_dna_master
+        return board_dna_master, board_dna_slave
 
     def identify(self):
         dna = self.dna()
         for i in range(2):
+            if not self.dualBoard and i==1:
+                return
+            
             print "SPI bus", i
             firmware_version = self.readRegister(i, self.map['FIRMWARE_VER'])
             firmware_version = [firmware_version[1], str((firmware_version[3] & 0xF0)>>4)+'.'+str(firmware_version[3]&0x0F)]
@@ -136,30 +144,40 @@ class Nuphase():
         self.calPulser(False)
         self.preTriggerWindow()
         self.bufferClear(15)
-        self.write(1,[39,0,0,1]) #send sync
-        self.write(0,[77,0,1,0]) #set buffer to 0 on slave
-        self.write(1,[77,0,1,0]) #set buffer to 0 
-        self.write(1,[39,0,0,0]) #release sync
-        self.write(1,[39,0,0,1]) #send sync
-        self.write(0,[126,0,0,1]) #reset event counter/timestamp on slave
-        self.write(1,[126,0,0,1]) #reset event counter/timestamp 
-        self.write(1,[39,0,0,0]) #release sync
+        
+        self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
+        self.write(self.BUS_SLAVE,[77,0,1,0]) #set buffer to 0 on slave
+        self.write(self.BUS_MASTER,[77,0,1,0]) #set buffer to 0 
+        self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
+        self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
+        self.write(self.BUS_SLAVE,[126,0,0,1]) #reset event counter/timestamp on slave
+        self.write(self.BUS_MASTER,[126,0,0,1]) #reset event counter/timestamp 
+        self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
         self.setReadoutBuffer(0)
         
         self.getDataManagerStatus(verbose=verbose)
 
     #same as above, but just reset the data manager stuff:
     def eventInit(self):
-        self.write(1,[39,0,0,0])
+        self.write(self.BUS_MASTER,[39,0,0,0])
         self.bufferClear(15)
-        self.write(1,[39,0,0,1]) #send sync
-        self.write(0,[77,0,1,0]) #set buffer to 0 on slave
-        self.write(1,[77,0,1,0]) #set buffer to 0
-        self.write(1,[39,0,0,0]) #release sync
-        self.write(1,[39,0,0,1]) #send sync
-        self.write(0,[126,0,0,1]) #reset event counter/timestamp on slave
-        self.write(1,[126,0,0,1]) #reset event counter/timestamp
-        self.write(1,[39,0,0,0]) #release sync
+
+        if self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
+            self.write(self.BUS_SLAVE,[77,0,1,0]) #set buffer to 0 on slave
+        self.write(self.BUS_MASTER,[77,0,1,0]) #set buffer to 0
+
+        if self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
+
+            self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
+            self.write(self.BUS_SLAVE,[126,0,0,1]) #reset event counter/timestamp on slave
+
+        self.write(self.BUS_MASTER,[126,0,0,1]) #reset event counter/timestamp
+
+        if self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
+
         self.setReadoutBuffer(0)
         
     def bufferClear(self, buf_clear_flag=15):
@@ -177,15 +195,22 @@ class Nuphase():
             self.write(self.BUS_MASTER, [39,0,0,0]) #release sync
             
     def calPulser(self, enable=True, readback=False):
-        if enable:
-            self.write(0, [42,0,0,3])
-            self.write(1, [42,0,0,3])
+        if self.dualBoard:
+
+            if enable:
+                self.write(0, [42,0,0,3])
+                self.write(1, [42,0,0,3])
+            else:
+                self.write(0, [42,0,0,0])
+                self.write(1, [42,0,0,0])
+
+            if readback:
+                print self.readRegister(0,42)
+                print self.readRegister(1,42)
+
         else:
-            self.write(0, [42,0,0,0])
-            self.write(1, [42,0,0,0])
-        if readback:
-            print self.readRegister(0,42)
-            print self.readRegister(1,42)
+            None #todo
+            
 
     def setReadoutBuffer(self, buf, readback=False):
         if buf < 0 or buf > 3:
