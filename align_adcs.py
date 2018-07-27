@@ -5,8 +5,8 @@ import numpy
 
 NUM_TRIES = 10
 verbose=True
-align_status_file = '/home/nuphase/nuphase-python/output/align_status'
-check_align_file  = '/home/nuphase/nuphase-python/output/align_check'
+align_status_file = '/home/nuphase/nuphase_python/output/align_status'
+check_align_file  = '/home/nuphase/nuphase_python/output/align_check'
 
 def init(verbose=verbose, reset_shift_bytes=True):
     sys = nuphase.Nuphase()
@@ -63,7 +63,7 @@ def getPeaks(data, mode=1, channels=[0,9]):
 def alignInit(sys):
     sys.boardInit()
     print 'checking ADC data good flags..'
-    while (sys.getDataValid() != (1,1)):
+    while (sys.getDataValid() != (1,1) and sys.dualBoards):
         time.sleep(1)
     print '...good\n'
     sys.boardInit()

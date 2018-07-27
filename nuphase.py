@@ -137,7 +137,7 @@ class Nuphase():
             self.write(self.BUS_MASTER,[39,0,0,0])
                                                         
     def boardInit(self, verbose=False):
-        self.write(1,[39,0,0,0]) #make sure sync disabled
+        self.write(self.BUS_MASTER,[39,0,0,0]) #make sure sync disabled
         self.externalTriggerInputConfig(enable=False) #disable external trigger 
         self.enablePhasedTriggerToDataManager(False, readback=verbose)
         self.enablePhasedTrigger(False, readback=verbose) #turn off trigger enables
@@ -195,21 +195,20 @@ class Nuphase():
             self.write(self.BUS_MASTER, [39,0,0,0]) #release sync
             
     def calPulser(self, enable=True, readback=False):
-        if self.dualBoard:
 
-            if enable:
-                self.write(0, [42,0,0,3])
-                self.write(1, [42,0,0,3])
-            else:
-                self.write(0, [42,0,0,0])
-                self.write(1, [42,0,0,0])
-
-            if readback:
-                print self.readRegister(0,42)
-                print self.readRegister(1,42)
-
+        if enable:
+            self.write(self.BUS_MASTER, [42,0,0,3])
+            if self.dualBoard:
+                self.write(self.BUS_SLAVE, [42,0,0,3])
         else:
-            None #todo
+            self.write(self.BUS_MASTER, [42,0,0,0])
+            if self.dualBoard:
+                self.write(self.BUS_SLAVE, [42,0,0,0])
+
+        if readback:
+            if self.dualBoard:
+                print self.readRegister(self.BUS_SLAVE,42)
+            print self.readRegister(self.BUS_MASTER,42)
             
 
     def setReadoutBuffer(self, buf, readback=False):
@@ -301,18 +300,26 @@ class Nuphase():
         return metadata
 
     def readSysEvent(self, address_start=1, address_stop=64, save=True, filename='test.dat'):
-        data_master = self.readBoardEvent(1, address_start=address_start, address_stop=address_stop)
-        data_slave = self.readBoardEvent(0, channel_stop=3, address_start=address_start, address_stop=address_stop)
+        data_master = self.readBoardEvent(self.BUS_MASTER, address_start=address_start, address_stop=address_stop)
+        if self.dualBoard:
+            data_slave = self.readBoardEvent(self.BUS_SLAVE, channel_stop=3, address_start=address_start, address_stop=address_stop)
+
         with open(filename, 'w') as f:
             for i in range(len(data_master[0])):
                 for j in range(len(data_master)):
                     f.write(str(data_master[j][i]))
                     f.write('\t')
-                for j in range(len(data_slave)):
-                    f.write(str(data_slave[j][i]))
-                    f.write('\t')
+                if self.dualBoard:
+                    for j in range(len(data_slave)):
+                        f.write(str(data_slave[j][i]))
+                        f.write('\t')
                 f.write('\n')
-        return data_master+data_slave
+
+        if self.dualBoard:
+            return data_master+data_slave
+        else:
+            return data_master
+
                     
     def readBoardEvent(self, dev, channel_start=0, channel_stop=7, address_start=0, address_stop=64):
         data=[]
@@ -355,16 +362,19 @@ class Nuphase():
 
     def getCurrentAttenValues(self, verbose=False):
         current_atten_values = []
-        temp=self.readRegister(1,50)
+        temp=self.readRegister(self.BUS_MASTER,50)
         current_atten_values.extend([temp[3],temp[2],temp[1]])
-        temp=self.readRegister(1,51)
+        temp=self.readRegister(self.BUS_MASTER,51)
         current_atten_values.extend([temp[3],temp[2],temp[1]])
-        temp=self.readRegister(1,52)
+        temp=self.readRegister(self.BUS_MASTER,52)
         current_atten_values.extend([temp[3],temp[2]])
-        temp=self.readRegister(0,50)
-        current_atten_values.extend([temp[3],temp[2],temp[1]])
-        temp=self.readRegister(0,51)
-        current_atten_values.extend([temp[3]])
+
+        if self.dualBoard:
+            temp=self.readRegister(0,50)
+            current_atten_values.extend([temp[3],temp[2],temp[1]])
+            temp=self.readRegister(0,51)
+            current_atten_values.extend([temp[3]])
+            
         if verbose:
             print 'reading back attenuation values:', current_atten_values
         return current_atten_values
@@ -374,10 +384,13 @@ class Nuphase():
         self.write(self.BUS_MASTER, [51, atten_values[5] & 0xFF, atten_values[4] & 0xFF, atten_values[3] & 0xFF])
         self.write(self.BUS_MASTER, [52, 0x00, atten_values[7] & 0xFF, atten_values[6] & 0xFF])
         self.write(self.BUS_MASTER, [53,0,0,0])
-        self.write(self.BUS_SLAVE, [50, 0x00, atten_values[9] & 0xFF, atten_values[8] & 0xFF])
-        #self.write(self.BUS_SLAVE, [50, atten_values[10] & 0xFF, atten_values[9] & 0xFF, atten_values[8] & 0xFF])
-        #self.write(self.BUS_SLAVE, [51, 0x00, 0x00, atten_values[11] & 0xFF])
-        self.write(self.BUS_SLAVE, [53,0,0,0])
+
+        if self.dualBoard:
+            self.write(self.BUS_SLAVE, [50, 0x00, atten_values[9] & 0xFF, atten_values[8] & 0xFF])
+            #self.write(self.BUS_SLAVE, [50, atten_values[10] & 0xFF, atten_values[9] & 0xFF, atten_values[8] & 0xFF])
+            #self.write(self.BUS_SLAVE, [51, 0x00, 0x00, atten_values[11] & 0xFF])
+            self.write(self.BUS_SLAVE, [53,0,0,0])
+            
         if readback:
             print 'set attenuation values to:', atten_values
             readback_atten_values = self.getCurrentAttenValues()

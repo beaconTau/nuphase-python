@@ -18,10 +18,10 @@ import time
 import sys
 import json
 
-DEFINE_NUM_CHAN = 10
+DEFINE_NUM_CHAN = 8
 TARGET_NOISE_RMS_COUNTS_PHASED_BOARD = 3.9 #3.1 # 4.2
 TARGET_NOISE_RMS_COUNTS_RX_BOARD = 7.1
-atten_file = '/home/nuphase/nuphase-python/output/atten_values'
+atten_file = '/home/nuphase/nuphase_python/output/atten_values'
 
 def getRMS(data):
     rms = []
@@ -44,19 +44,20 @@ if __name__=='__main__':
 
     #-------------------------------------------
     #don't do scan, load previous values
-    if sys.argv[1] == 'load':
+    if len(sys.argv) > 1:
+        if sys.argv[1] == 'load':
 
-        try:
-            load_attenuation = numpy.loadtxt(atten_file)
-        except IOError:
-            print atten_file, 'does not exist, set_attenuation.py needs to be run in non-load mode first'
-            sys.exit(1)
+            try:
+                load_attenuation = numpy.loadtxt(atten_file)
+            except IOError:
+                print atten_file, 'does not exist, set_attenuation.py needs to be run in non-load mode first'
+                sys.exit(1)
         
-        load_attenuation_reversed_bits = numpy.array(load_attenuation[:,1], dtype=int)
-        dev.setAttenValues(load_attenuation_reversed_bits)
+            load_attenuation_reversed_bits = numpy.array(load_attenuation[:,1], dtype=int)
+            dev.setAttenValues(load_attenuation_reversed_bits)
 
-        print 'ATTEN VALUES LOADED. reading back attenuation bytes:', dev.getCurrentAttenValues()
-        sys.exit(0)
+            print 'ATTEN VALUES LOADED. reading back attenuation bytes:', dev.getCurrentAttenValues()
+            sys.exit(0)
     #--------------------------------------------
 
     # otherwise, do scan:
@@ -113,7 +114,7 @@ if __name__=='__main__':
         time.sleep(0.1) #a bit of wait time
         iter_step = iter_step + 1
 
-    with open('/home/nuphase/nuphase-python/output/rms_scan.json', 'w') as f:
+    with open('/home/nuphase/nuphase_python/output/rms_scan.json', 'w') as f:
         json.dump(rms_scan_dict,f)
     print done
     
