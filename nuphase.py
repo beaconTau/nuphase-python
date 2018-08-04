@@ -37,6 +37,7 @@ class Nuphase():
         self.spi={}
         self.spi[0]=SPI.SPI(self.BUS_MASTER,0) #setup SPI0
         self.spi[0].mode = 0
+    
         self.spi[1]=SPI.SPI(self.BUS_SLAVE,0)
         self.spi[1].mode = 0
 
@@ -214,7 +215,7 @@ class Nuphase():
     def setReadoutBuffer(self, buf, readback=False):
         if buf < 0 or buf > 3:
             return None
-        self.write(0, [78,0,0,buf])
+        self.write(self.BUS_MASTER, [78,0,0,buf])
         self.write(1, [78,0,0,buf])
         if readback:
             print self.readRegister(0,78)
@@ -249,22 +250,27 @@ class Nuphase():
         metadata={}
         metadata['master'] = {}  #master
         metadata['slave'] = {}  #slave
-        evt_counter_master_lo = self.readRegister(1, 10)
-        evt_counter_master_hi = self.readRegister(1, 11)
-        evt_counter_slave_lo = self.readRegister(0, 10)
-        evt_counter_slave_hi = self.readRegister(0, 11)
-        trig_counter_master_lo = self.readRegister(1, 12)
-        trig_counter_master_hi = self.readRegister(1, 13)
-        trig_counter_slave_lo = self.readRegister(0, 12)
-        trig_counter_slave_hi = self.readRegister(0, 13)
-        trig_time_master_lo = self.readRegister(1, 14)
-        trig_time_master_hi = self.readRegister(1, 15)
-        trig_time_slave_lo = self.readRegister(0, 14)
-        trig_time_slave_hi = self.readRegister(0, 15)
-        deadtime_master = self.readRegister(1,16)
-        deadtime_slave = self.readRegister(0,16)
+        evt_counter_master_lo = self.readRegister(self.BUS_MASTER, 10)
+        evt_counter_master_hi = self.readRegister(self.BUS_MASTER, 11)
+        if self.dualBoard:
+            evt_counter_slave_lo = self.readRegister(self.BUS_SLAVE, 10)
+            evt_counter_slave_hi = self.readRegister(self.BUS_SLAVE, 11)
+        trig_counter_master_lo = self.readRegister(self.BUS_MASTER, 12)
+        trig_counter_master_hi = self.readRegister(self.BUS_MASTER, 13)
+        if self.dualBoard:
+            trig_counter_slave_lo = self.readRegister(self.BUS_SLAVE, 12)
+            trig_counter_slave_hi = self.readRegister(self.BUS_SLAVE, 13)
+        trig_time_master_lo = self.readRegister(self.BUS_MASTER, 14)
+        trig_time_master_hi = self.readRegister(self.BUS_MASTER, 15)
+        if self.dualBoard:
+            trig_time_slave_lo = self.readRegister(self.BUS_SLAVE, 14)
+            trig_time_slave_hi = self.readRegister(self.BUS_SLAVE, 15)
+        deadtime_master = self.readRegister(self.BUS_MASTER,16)
+        if self.dualBoard:
+            deadtime_slave = self.readRegister(self.BUS_SLAVE,16)
         trig_info_master = self.readRegister(self.BUS_MASTER,17)
-        trig_info_slave = self.readRegister(self.BUS_SLAVE,17)
+        if self.dualBoard:
+            trig_info_slave = self.readRegister(self.BUS_SLAVE,17)
         scaler_counter_master = self.readRegister(self.BUS_MASTER, 19)
         trig_beam_power = []
         for i in range(15):
@@ -280,22 +286,25 @@ class Nuphase():
         metadata['master']['last_beam_trig'] = (trig_info_master[2] & 0x7F) << 8 | trig_info_master[3]
         metadata['master']['trig_type'] = (trig_info_master[1] & 0x01) << 1 | (trig_info_master[2] & 0x80) >> 7
         metadata['master']['buffer_no'] = (trig_info_master[1] & 0xC0) >> 6
-        metadata['slave']['evt_count'] = evt_counter_slave_hi[1] << 40 | evt_counter_slave_hi[3] << 32 | evt_counter_slave_hi[3] << 24 |\
-                                   evt_counter_slave_lo[1] << 16 | evt_counter_slave_lo [2] << 8 | evt_counter_slave_lo[3]
-        metadata['slave']['trig_count'] = trig_counter_slave_hi[1] << 40 | trig_counter_slave_hi[3] << 32 | trig_counter_slave_hi[3] << 24 |\
-                                    trig_counter_slave_lo[1] << 16 | trig_counter_slave_lo [2] << 8 | trig_counter_slave_lo[3]
-        metadata['slave']['trig_time'] = trig_time_slave_hi[1] << 40 | trig_time_slave_hi[2] << 32 | trig_time_slave_hi[3] << 24 |\
-                                   trig_time_slave_lo[1] << 16 | trig_time_slave_lo[2] << 8 | trig_time_slave_lo[3]
-        metadata['slave']['deadtime'] =  deadtime_slave[1] << 16 | deadtime_slave[2] << 8 | deadtime_slave[3]
-        metadata['slave']['trig_type'] = (trig_info_slave[1] & 0x01) << 1 | (trig_info_slave[2] & 0x80) >> 7
-        metadata['slave']['buffer_no'] = (trig_info_slave[1] & 0xC0) >> 6
+
+        if self.dualBoard:
+            metadata['slave']['evt_count'] = evt_counter_slave_hi[1] << 40 | evt_counter_slave_hi[3] << 32 | evt_counter_slave_hi[3] << 24 |\
+                                             evt_counter_slave_lo[1] << 16 | evt_counter_slave_lo [2] << 8 | evt_counter_slave_lo[3]
+
+            metadata['slave']['trig_count'] = trig_counter_slave_hi[1] << 40 | trig_counter_slave_hi[3] << 32 | trig_counter_slave_hi[3] << 24 |\
+                                              trig_counter_slave_lo[1] << 16 | trig_counter_slave_lo [2] << 8 | trig_counter_slave_lo[3]
+            metadata['slave']['trig_time'] = trig_time_slave_hi[1] << 40 | trig_time_slave_hi[2] << 32 | trig_time_slave_hi[3] << 24 |\
+                                             trig_time_slave_lo[1] << 16 | trig_time_slave_lo[2] << 8 | trig_time_slave_lo[3]
+            metadata['slave']['deadtime'] =  deadtime_slave[1] << 16 | deadtime_slave[2] << 8 | deadtime_slave[3]
+            metadata['slave']['trig_type'] = (trig_info_slave[1] & 0x01) << 1 | (trig_info_slave[2] & 0x80) >> 7
+            metadata['slave']['buffer_no'] = (trig_info_slave[1] & 0xC0) >> 6
 
         metadata['master']['scaler_slow'] = (scaler_counter_master[2] & 0x0F) << 8 | scaler_counter_master[3]
         metadata['master']['scaler_fast'] = (scaler_counter_master[1] & 0xFF) << 4 | (scaler_counter_master[2] & 0xF0) >> 4
 
-        metadata['master']['beam_power']=[]
-        for i in range(15):
-            metadata['master']['beam_power'].append(trig_beam_power[i][1] << 16 | trig_beam_power[i][2] << 8 | trig_beam_power[i][3])
+        #metadata['master']['beam_power']=[]
+        #for i in range(15):
+        #    metadata['master']['beam_power'].append(trig_beam_power[i][1] << 16 | trig_beam_power[i][2] << 8 | trig_beam_power[i][3])
                                    
         return metadata
 
@@ -370,9 +379,9 @@ class Nuphase():
         current_atten_values.extend([temp[3],temp[2]])
 
         if self.dualBoard:
-            temp=self.readRegister(0,50)
+            temp=self.readRegister(self.BUS_SLAVE,50)
             current_atten_values.extend([temp[3],temp[2],temp[1]])
-            temp=self.readRegister(0,51)
+            temp=self.readRegister(self.BUS_SLAVE,51)
             current_atten_values.extend([temp[3]])
             
         if verbose:
