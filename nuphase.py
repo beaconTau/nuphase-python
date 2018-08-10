@@ -216,29 +216,33 @@ class Nuphase():
         if buf < 0 or buf > 3:
             return None
         self.write(self.BUS_MASTER, [78,0,0,buf])
-        self.write(1, [78,0,0,buf])
+        if self.dualBoard:
+            self.write(self.BUS_SLAVE, [78,0,0,buf])
         if readback:
-            print self.readRegister(0,78)
-            print self.readRegister(1,78)
+            print self.readRegister(self.BUS_MASTER,78)
+            if self.dualBoard:
+                print self.readRegister(self.BUS_SLAVE,78)
         
     def softwareTrigger(self, sync=True):
-        if sync:
-            self.write(1,[39,0,0,1]) #send sync command to master
-        self.write(1,[64,0,0,1]) #send software trig to slave
-        self.write(0,[64,0,0,1]) #send software trig to master
+        if sync and self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,1]) #send sync command to master
 
-        if sync:
-            self.write(1,[39,0,0,0]) #release sync
+        if self.dualBoard:
+            self.write(self.BUS_SLAVE,[64,0,0,1]) #send software trig to slave
+        self.write(self.BUS_MASTER,[64,0,0,1]) #send software trig to master
+
+        if sync and self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
 
     def getDataManagerStatus(self, verbose=True):
-        status_master = self.readRegister(1, 7)
-        status_slave = self.readRegister(0,7)
+        status_master = self.readRegister(self.BUS_MASTER, 7)
+        status_slave = self.readRegister(self.BUS_SLAVE,7)
         self.buffers_full = [status_master[2] & 1, status_slave[2] & 1]
         self.current_buffer = [(status_master[2] & 48) >> 4,(status_slave[2] & 48) >> 4]
         self.buffer_flags = [status_master[3] & 15, status_slave[3] & 15]
         self.last_trig_type = [(status_master[1] & 3), (status_slave[1] & 3)]
         
-        if verbose:
+        if verbose and self.dualBoard:
             print 'status master:', status_master, 'status slave:', status_slave
             print 'current write buffer, master:', self.current_buffer[0], 'slave:', self.current_buffer[1]
             print 'all buffers full?     master:', self.buffers_full[0], 'slave:', self.buffers_full[1]
