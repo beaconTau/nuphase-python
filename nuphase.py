@@ -10,9 +10,11 @@ import time
 import os
 from tools.bf import *
 
+NUM_BEAMS = 24
+
 class Nuphase():
     spi_bytes = 4  #transaction must include 4 bytes
-    firmware_registers_adr_max=128
+    firmware_registers_adr_max=256
     firmware_ram_adr_max=128
 
     map = {
@@ -26,7 +28,8 @@ class Nuphase():
         'RAM_ADR'       : 0x45, #ram address
         'MODE'          : 0x42, #select readout mode
         'CALPULSE'      : 0x2A, #toggle RF switch/pulser board
-        }
+        'THRESHOLDS'    : 0x80,
+    }
         
     def __init__(self, spi_clk_freq=10000000, dualBoard=False):
         if not os.path.isfile('/sys/class/gpio/gpio60/value'):
@@ -71,7 +74,7 @@ class Nuphase():
         send_word=[self.map['SET_READ_REG'], 0x00, 0x00, address & 0xFF]
         self.write(dev, send_word) #set read register of interest
         readback = self.read(dev)
-        
+#        print readback
         return readback
 
     def dna(self):
@@ -182,15 +185,18 @@ class Nuphase():
         self.setReadoutBuffer(0)
         
     def bufferClear(self, buf_clear_flag=15):
-         self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
-         self.write(self.BUS_SLAVE, [77,0,0,buf_clear_flag]) #clear buffers on slave
-         self.write(self.BUS_MASTER,[77,0,0,buf_clear_flag]) #clear buffers on master
-         self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
+
+        if self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,1]) #send sync
+            self.write(self.BUS_SLAVE, [77,0,0,buf_clear_flag]) #clear buffers on slave
+        self.write(self.BUS_MASTER,[77,0,0,buf_clear_flag]) #clear buffers on master
+        if self.dualBoard:
+            self.write(self.BUS_MASTER,[39,0,0,0]) #release sync
 
     def dclkReset(self, sync=True):
         if sync:
             self.write(self.BUS_MASTER, [39,0,0,1]) #send sync
-        self.write(self.BUS_SLAVE, [55,0,0,1]) #send dclk reset pulse to slave
+            self.write(self.BUS_SLAVE, [55,0,0,1]) #send dclk reset pulse to slave
         self.write(self.BUS_MASTER, [55,0,0,1]) #send dclk reset pulse to master
         if sync:
             self.write(self.BUS_MASTER, [39,0,0,0]) #release sync
@@ -242,7 +248,7 @@ class Nuphase():
         self.buffer_flags = [status_master[3] & 15, status_slave[3] & 15]
         self.last_trig_type = [(status_master[1] & 3), (status_slave[1] & 3)]
         
-        if verbose and self.dualBoard:
+        if verbose: # and self.dualBoard:
             print 'status master:', status_master, 'status slave:', status_slave
             print 'current write buffer, master:', self.current_buffer[0], 'slave:', self.current_buffer[1]
             print 'all buffers full?     master:', self.buffers_full[0], 'slave:', self.buffers_full[1]
@@ -411,30 +417,35 @@ class Nuphase():
             return readback_atten_values
 
     def externalTriggerInputConfig(self, enable=False, use_gate_gen=False, gate_value=255):
-        self.write(self.BUS_MASTER, [39,0,0,1]) #send sync
+        if self.dualBoard:
+            self.write(self.BUS_MASTER, [39,0,0,1]) #send sync
         gate_low_byte = gate_value & 0x00FF
         gate_high_byte = (gate_value & 0xFF00) >> 8
-        self.write(self.BUS_SLAVE, [75, gate_high_byte, gate_low_byte, 0x00 | (use_gate_gen << 1) | enable])
+
+        if self.dualBoard:
+            self.write(self.BUS_SLAVE, [75, gate_high_byte, gate_low_byte, 0x00 | (use_gate_gen << 1) | enable])
         self.write(self.BUS_MASTER, [75, gate_high_byte, gate_low_byte, 0x00 | (use_gate_gen << 1) | enable])
-        self.write(self.BUS_MASTER, [39,0,0,0]) 
+
+        if self.dualBoard:
+            self.write(self.BUS_MASTER, [39,0,0,0]) 
         
-    def updateScalerValues(self, bus=1):
+    def updateScalerValues(self, bus=0):
         self.write(bus, [40,0,0,1])
 
-    def setScalerOut(self, scaler_adr=0, bus=1):
-        if scaler_adr < 0 or scaler_adr > 24:
+    def setScalerOut(self, scaler_adr=0, bus=0):
+        if scaler_adr < 0 or scaler_adr > 38: #max scalers is 38 for protobeacon
             return None
         self.write(bus, [41,0,0,scaler_adr])
 
-    def readSingleScaler(self, bus=1):
+    def readSingleScaler(self, bus=0):
         read_scaler_reg = self.readRegister(bus,3)
         scaler_low = (read_scaler_reg[2] & 0x0F) << 8 | read_scaler_reg[3]
         scaler_hi  = (read_scaler_reg[1] & 0xFF) << 4 | (read_scaler_reg[2] & 0xF0) >> 4
         return scaler_low, scaler_hi
     
-    def readScalers(self, bus=1):
+    def readScalers(self, bus=0):
         scaler_dict = {}
-        scaler_dict[0] = 0 #total phased trigger rate
+        scaler_dict[0] = 0 #total  trigger rate
         scaler_dict[1] = [] #rate in each beam
         scaler_dict[2] = 0  # every-second total
         scaler_dict[3] = [] #every-second rate in each beam
@@ -481,10 +492,11 @@ class Nuphase():
         return scaler_dict
 
     def preTriggerWindow(self, value=6):
-        self.write(self.BUS_SLAVE, [76, 0, 0, value & 0xFF])
+        if self.dualBoard:
+            self.write(self.BUS_SLAVE, [76, 0, 0, value & 0xFF])
         self.write(self.BUS_MASTER, [76, 0, 0, value & 0xFF])
 
-    def enablePhasedTrigger(self, enable=True, readback=True, verification_mode=True, bus=1):
+    def enablePhasedTrigger(self, enable=True, readback=True, verification_mode=False, bus=0):
         readback_trig_reg = self.readRegister(bus, 82)
         if enable:
             self.write(bus,[82, readback_trig_reg[1], readback_trig_reg[2], readback_trig_reg[3] | 0x01])
@@ -498,6 +510,7 @@ class Nuphase():
         ####
         if readback:
             readback_trig_reg = self.readRegister(bus, 82)
+            print readback_trig_reg
             return readback_trig_reg
 
     #def setPhasedTriggerOutput(self, pol=1, width=
@@ -517,15 +530,15 @@ class Nuphase():
             print readback_trig_reg
             return readback_trig_reg
 
-    def readAllThresholds(self, bus=1):
+    def readAllThresholds(self, bus=0):
         current_thresholds=[]
-        for i in range(15):
-            temp = self.readRegister(bus,86+i)
+        for i in range(NUM_BEAMS):
+            temp = self.readRegister(bus,self.map['THRESHOLDS']+i)
             current_thresholds.append((temp[1] << 16) | (temp[2] << 8) | temp[3])
         return current_thresholds
     
-    def setBeamThresholds(self, threshold, beam=0, readback=True, bus=1):
-        if beam < 0 or beam > 15:
+    def setBeamThresholds(self, threshold, beam=0, readback=True, bus=0):
+        if beam < 0 or beam > NUM_BEAMS:
             return None
         if threshold < 0 or threshold > 0x0FFFFF:
             print 'invalid threshold'
@@ -534,10 +547,10 @@ class Nuphase():
         thresh_hi = (threshold & 0x0F0000) >> 16
         thresh_mid = (threshold & 0x00FF00) >> 8
         thresh_lo = (threshold & 0x0000FF)
-        self.write(bus, [86+beam, thresh_hi, thresh_mid, thresh_lo])
+        self.write(bus, [self.map['THRESHOLDS']+beam, thresh_hi, thresh_mid, thresh_lo])
 
         if readback:
-            readback_thresh = self.readRegister(1, 86+beam)
+            readback_thresh = self.readRegister(self.BUS_MASTER, self.map['THRESHOLDS']+beam)
             print 'reading back threshold for beam', beam, ' Value is', readback_thresh
             return readback_thresh
         
