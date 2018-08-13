@@ -129,8 +129,10 @@ class Nuphase():
 
     def getDataValid(self):
         data_valid_master = (self.readRegister(self.BUS_MASTER, 8)[3] & 16) >> 4
-        data_valid_slave  = (self.readRegister(self.BUS_SLAVE, 8)[3] & 16) >> 4
-        return data_valid_master, data_valid_slave
+        if self.dualBoard:
+            data_valid_slave  = (self.readRegister(self.BUS_SLAVE, 8)[3] & 16) >> 4
+            return data_valid_master, data_valid_slave
+        return data_valid_master
             
     def resetADC(self, sync=True):
         if sync:
@@ -249,12 +251,31 @@ class Nuphase():
         self.last_trig_type = [(status_master[1] & 3), (status_slave[1] & 3)]
         
         if verbose: # and self.dualBoard:
-            print 'status master:', status_master, 'status slave:', status_slave
-            print 'current write buffer, master:', self.current_buffer[0], 'slave:', self.current_buffer[1]
-            print 'all buffers full?     master:', self.buffers_full[0], 'slave:', self.buffers_full[1]
-            print 'buffer full flags     master:', self.buffer_flags[0], 'slave:', self.buffer_flags[1]
-            print 'last trig type        master:', self.last_trig_type[0], 'slave:', self.last_trig_type[1]
-
+            print 'status master:', status_master,
+            if self.dualBoard:
+                print 'status slave:', status_slave
+            else:
+                print
+            print 'current write buffer, master:', self.current_buffer[0],
+            if self.dualBoard:
+                print 'slave:', self.current_buffer[1]
+            else:
+                print
+            print 'all buffers full?     master:', self.buffers_full[0],
+            if self.dualBoard:
+                print 'slave:', self.buffers_full[1]
+            else:
+                print
+            print 'buffer full flags     master:', self.buffer_flags[0],
+            if self.dualBoard:
+                print 'slave:', self.buffer_flags[1]
+            else:
+                print
+            print 'last trig type        master:', self.last_trig_type[0],
+            if self.dualBoard:
+                print 'slave:', self.last_trig_type[1]
+            else:
+                print
     def getMetaData(self, verbose=True):
         '''UPDATE FOR BEACON'''
         metadata={}
